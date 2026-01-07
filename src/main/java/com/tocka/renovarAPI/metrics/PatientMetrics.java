@@ -8,6 +8,8 @@ import com.tocka.renovarAPI.patient.Patient;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -32,12 +34,22 @@ public class PatientMetrics {
     @Column(name = "current_score", nullable = false)
     private Integer currentScore = 500;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "current_risk_level", nullable = false)
+    private RiskLevel currentRiskLevel = RiskLevel.BOM; // 500 pts = BOM
+
     @Column(name = "clean_days_streak", nullable = false)
     private Integer cleanDaysStreak = 0;
 
     @Column(name = "savings_accumulated", nullable = false, precision = 10, scale = 2)
     private BigDecimal savingsAccumulated = BigDecimal.ZERO;
 
+    @Column(name = "time_recovered", nullable = false)
+    private Integer timeRecovered = 0; // em minutos
+
     @Column(name = "last_checkin")
     private LocalDateTime lastCheckin;
+
+    @Column(name = "last_bet_at")
+    private LocalDateTime lastBetAt;
 }

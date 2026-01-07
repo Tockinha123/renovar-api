@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tocka.renovarAPI.infra.exception.EmailAlreadyExistsException;
+import com.tocka.renovarAPI.metrics.MetricsCalculatorService;
 import com.tocka.renovarAPI.metrics.PatientMetrics;
 import com.tocka.renovarAPI.metrics.PatientMetricsRepository;
 import com.tocka.renovarAPI.user.RegisterPatientDTO;
@@ -21,15 +22,18 @@ public class PatientService {
     private final PatientRepository patientRepository;
     private final PatientMetricsRepository patientMetricsRepository;
     private final PasswordEncoder passwordEncoder;
+    private final MetricsCalculatorService metricsCalculator;
 
     public PatientService(UserRepository userRepository,
                           PatientRepository patientRepository,
                           PatientMetricsRepository patientMetricsRepository,
-                          PasswordEncoder passwordEncoder) {
+                          PasswordEncoder passwordEncoder,
+                          MetricsCalculatorService metricsCalculator) {
         this.userRepository = userRepository;
         this.patientRepository = patientRepository;
         this.patientMetricsRepository = patientMetricsRepository;
         this.passwordEncoder = passwordEncoder;
+        this.metricsCalculator = metricsCalculator;
     }
 
     @Transactional
@@ -55,12 +59,14 @@ public class PatientService {
         patient.setSessionTimeBaseline(data.sessionTimeBaseline());
         patientRepository.save(patient);
 
-        // 4. Criar e salvar PatientMetrics (score inicial = 500)
+        // 4. Criar e salvar PatientMetrics (score inicial = 500, riskLevel = BOM)
         PatientMetrics metrics = new PatientMetrics();
         metrics.setPatient(patient);
         metrics.setCurrentScore(500);
+        metrics.setCurrentRiskLevel(metricsCalculator.calcularRiskLevel(500)); // BOM
         metrics.setCleanDaysStreak(0);
         metrics.setSavingsAccumulated(BigDecimal.ZERO);
+        metrics.setTimeRecovered(0);
         patientMetricsRepository.save(metrics);
 
         return patient;
