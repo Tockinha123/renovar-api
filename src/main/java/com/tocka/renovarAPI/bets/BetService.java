@@ -4,7 +4,6 @@ import com.tocka.renovarAPI.metrics.MetricsCalculatorService;
 import com.tocka.renovarAPI.metrics.PatientMetricsRepository;
 import com.tocka.renovarAPI.patient.PatientRepository;
 import com.tocka.renovarAPI.user.User;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
