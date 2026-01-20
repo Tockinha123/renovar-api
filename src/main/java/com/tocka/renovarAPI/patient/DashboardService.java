@@ -4,6 +4,9 @@ import com.tocka.renovarAPI.metrics.MetricsCalculatorService;
 import com.tocka.renovarAPI.metrics.PatientMetrics;
 import com.tocka.renovarAPI.metrics.PatientMetricsRepository;
 import com.tocka.renovarAPI.user.User;
+
+import java.math.BigDecimal;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,19 +36,26 @@ public class DashboardService {
         PatientMetrics metrics = metricsRepository.findByPatient(patient)
                 .orElseThrow(() -> new RuntimeException("Métricas não encontradas"));
 
-        // 3. Calcula métricas em tempo real usando o serviço
-        long diasLimpos = metricsCalculator.calcularDiasLimpos(metrics);
-        var economiaAcumulada = metricsCalculator.calcularEconomia(metrics);
-        long horasSalvas = metricsCalculator.calcularHorasSalvas(metrics);
+        long diasLimposStreak = metricsCalculator.calcularDiasLimpos(metrics);
+        BigDecimal economiaStreak = metricsCalculator.calcularEconomia(metrics);
+        long horasStreak = metricsCalculator.calcularHorasSalvas(metrics);
+
+        // 2. O que ele já tinha guardado no COFRE (histórico)
+        BigDecimal cofreDinheiro = metrics.getSavingsAccumulated() != null ? metrics.getSavingsAccumulated() : BigDecimal.ZERO;
+        long cofreTempo = metrics.getTimeRecovered() != null ? metrics.getTimeRecovered() : 0;
+
+        // 3. Soma para exibir o Total Vitalício
+        BigDecimal economiaTotal = cofreDinheiro.add(economiaStreak);
+        long horasTotais = cofreTempo + horasStreak;
 
         // 4. Monta o DTO
         DashboardDTO dto = new DashboardDTO(
             patient.getName(),
             metrics.getCurrentScore(),
             metrics.getCurrentRiskLevel() != null ? metrics.getCurrentRiskLevel().name() : "N/A",
-            diasLimpos,
-            economiaAcumulada,
-            horasSalvas,
+            diasLimposStreak,
+            economiaTotal,
+            horasTotais,
             metrics.getCleanDaysStreak()
         );
 

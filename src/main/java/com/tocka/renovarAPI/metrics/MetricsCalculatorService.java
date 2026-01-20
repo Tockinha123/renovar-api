@@ -98,4 +98,19 @@ public class MetricsCalculatorService {
     public int aplicarSoftReset(int streakAtual) {
         return streakAtual / 2; // Integer division já faz o floor
     }
+
+    public int calcularNovoScoreAposRecaida(int scoreAtual, BigDecimal valorAposta, BigDecimal baseline) {
+        if (baseline == null) baseline = BigDecimal.ZERO;
+        
+        double fatorPenalidade;
+        
+        if (valorAposta.compareTo(baseline) > 0) {
+            fatorPenalidade = 0.5; 
+        } else {
+
+            fatorPenalidade = 0.75; 
+        }
+        
+        return (int) (scoreAtual * fatorPenalidade);
+    }
 }
