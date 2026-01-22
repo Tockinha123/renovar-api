@@ -28,3 +28,9 @@ api:
     jwt:
       secret: ${JWT_SECRET}
       expiration-s: ${JWT_EXPIRATION_SEC}
+
+scalar:
+  page-title: Renovar API Documentation
+  theme: deep-space
+  dark-mode: true
+  layout: modern

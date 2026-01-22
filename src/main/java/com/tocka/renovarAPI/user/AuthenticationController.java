@@ -13,10 +13,15 @@ import org.springframework.web.bind.annotation.RestController;
 import com.tocka.renovarAPI.infra.security.TokenService;
 import com.tocka.renovarAPI.patient.PatientService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@Tag(
+    name = "Autenticação e Registro de Pacientes"
+)
 public class AuthenticationController {
 
     private final TokenService tokenService;
@@ -32,6 +37,10 @@ public class AuthenticationController {
     }
 
     @PostMapping("/login")
+    @Operation(
+        summary = "Login do Paciente",
+        description = "Autentica um paciente possibilitando o acesso ao sistema."
+    )
     public ResponseEntity<String> login(@RequestBody @Valid UserRequest data) {
         var usernamePassword = new UsernamePasswordAuthenticationToken(data.email(), data.password());
         var auth = authenticationManager.authenticate(usernamePassword);
@@ -40,7 +49,10 @@ public class AuthenticationController {
     }
 
     @PostMapping("/register")
-    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+        summary = "Cadastro do Paciente",
+        description = "Registra um novo paciente no sistema."
+    )
     public ResponseEntity<String> register(@RequestBody @Valid RegisterPatientDTO data) {
         patientService.registerPatient(data);
         return ResponseEntity.status(HttpStatus.CREATED).body("Paciente registrado com sucesso");

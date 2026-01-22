@@ -8,8 +8,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.tocka.renovarAPI.user.User;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/v1/dashboard")
+@Tag(
+    name = "Dashboard do Paciente"
+)
 public class DashboardController {
 
     private final DashboardService dashboardService;
@@ -19,6 +25,10 @@ public class DashboardController {
     }
 
     @GetMapping
+    @Operation(
+        summary = "Obter Informações do Dashboard",
+        description = "Recupera as informações principais do paciente para a visualização no dashboard."
+    )
     public ResponseEntity<DashboardDTO> getDashboard(@AuthenticationPrincipal User user) {
         DashboardDTO dashboardInformations = dashboardService.gerarDashboard(user);
         return ResponseEntity.status(HttpStatus.OK).body(dashboardInformations);
