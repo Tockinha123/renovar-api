@@ -10,7 +10,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class BetService {
@@ -81,12 +87,48 @@ public class BetService {
         return new BetResponseDTO(bet);
     }
 
-    // Método de listagem
+    
     public Page<BetResponseDTO> listarApostas(User user, Pageable pageable) {
         var patient = patientRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));
-        // O repositório precisa ter o método findByPatientOrderByCreatedAtDesc
+
         return betRepository.findByPatientOrderByCreatedAtDesc(patient, pageable)
                 .map(BetResponseDTO::new);
+    }
+
+    public List<CalendarResponseDTO> gerarCalendario(User user, int month, int year) {
+        
+        var patient = patientRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));
+
+        YearMonth anoMes = YearMonth.of(year, month);
+        LocalDateTime inicioMes = anoMes.atDay(1).atStartOfDay();
+        LocalDateTime fimMes = anoMes.atEndOfMonth().atTime(23, 59, 59);
+
+        List<Bet> apostasDoMes = betRepository.findByPatientAndCreatedAtBetween(patient, inicioMes, fimMes);
+
+        Set<LocalDate> diasComAposta = apostasDoMes.stream()
+                .map(bet -> bet.getCreatedAt().toLocalDate())
+                .collect(Collectors.toSet());
+
+        List<CalendarResponseDTO> calendario = new ArrayList<>();
+        LocalDate hoje = LocalDate.now();
+
+        for (int dia = 1; dia <= anoMes.lengthOfMonth(); dia++) {
+            LocalDate dataAtual = anoMes.atDay(dia);
+            DayStatus status;
+
+            if (dataAtual.isAfter(hoje)) {
+                status = DayStatus.FUTURO; 
+            } else if (diasComAposta.contains(dataAtual)) {
+                status = DayStatus.APOSTOU; 
+            } else {
+                status = DayStatus.LIMPO; 
+            }
+
+            calendario.add(new CalendarResponseDTO(dataAtual, status));
+        }
+
+        return calendario;
     }
 }

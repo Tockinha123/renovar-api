@@ -5,14 +5,22 @@ import com.tocka.renovarAPI.user.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+
+import java.util.List;
+
+import org.apache.catalina.connector.Response;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
 
 @RestController
 @RequestMapping("/api/v1/bets")
@@ -52,4 +60,19 @@ public class BetController {
         var page = betService.listarApostas(user, pageable);
         return ResponseEntity.ok(page);
     }
+
+    @GetMapping("/calendar")
+    @Operation(
+        summary = "Listar os dias do mês com apostas",
+        description = "Gera uma lista dos dias do mês de um determinado ano indicando quais dias o paciente fez apostas."
+    )
+    public ResponseEntity<List<CalendarResponseDTO>> getMethodName(
+            @AuthenticationPrincipal User user,
+            @RequestParam int year,
+            @RequestParam int month
+    ) {
+        List<CalendarResponseDTO> calendario = betService.gerarCalendario(user, month, year);
+        return ResponseEntity.status(HttpStatus.OK).body(calendario);
+    }
+    
 }
