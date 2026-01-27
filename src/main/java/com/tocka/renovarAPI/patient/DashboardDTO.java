@@ -7,7 +7,6 @@ import java.math.BigDecimal;
  * Contém todas as métricas calculadas em tempo real.
  */
 public record DashboardDTO(
-    String name,
     Integer currentScore,
     String riskLevel,
     long diasLimpos,

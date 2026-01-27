@@ -50,7 +50,6 @@ public class DashboardService {
 
         // 4. Monta o DTO
         DashboardDTO dto = new DashboardDTO(
-            patient.getName(),
             metrics.getCurrentScore(),
             metrics.getCurrentRiskLevel() != null ? metrics.getCurrentRiskLevel().name() : "N/A",
             diasLimposStreak,

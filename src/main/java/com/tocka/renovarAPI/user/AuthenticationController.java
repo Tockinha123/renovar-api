@@ -40,20 +40,26 @@ public class AuthenticationController {
         summary = "Login do Paciente",
         description = "Autentica um paciente possibilitando o acesso ao sistema."
     )
-    public ResponseEntity<String> login(@RequestBody @Valid UserRequest data) {
+    public ResponseEntity<LoginResponseDTO> login(@RequestBody @Valid UserRequest data) {
         var usernamePassword = new UsernamePasswordAuthenticationToken(data.email(), data.password());
         var auth = authenticationManager.authenticate(usernamePassword);
-        var token = tokenService.generateToken((User) auth.getPrincipal());
-        return ResponseEntity.status(HttpStatus.OK).body(token);
+        var user = (User) auth.getPrincipal();
+        
+        var token = tokenService.generateToken(user);
+        var patientName = patientService.getPatientNameByUser(user);
+        
+        var loginResponse = new LoginResponseDTO(patientName, user.getEmail(), token);
+        
+        return ResponseEntity.status(HttpStatus.OK).body(loginResponse);
     }
 
     @PostMapping("/register")
     @Operation(
         summary = "Cadastro do Paciente",
-        description = "Registra um novo paciente no sistema."
+        description = "Registra um novo paciente no sistema e retorna os dados para login automático."
     )
-    public ResponseEntity<String> register(@RequestBody @Valid RegisterPatientDTO data) {
-        patientService.registerPatient(data);
-        return ResponseEntity.status(HttpStatus.CREATED).body("Paciente registrado com sucesso");
+    public ResponseEntity<LoginResponseDTO> register(@RequestBody @Valid RegisterPatientDTO data) {
+        LoginResponseDTO loginResponse = patientService.registerPatient(data);
+        return ResponseEntity.status(HttpStatus.CREATED).body(loginResponse);
     }
 }

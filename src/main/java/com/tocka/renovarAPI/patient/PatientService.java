@@ -7,9 +7,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tocka.renovarAPI.infra.exception.EmailAlreadyExistsException;
+import com.tocka.renovarAPI.infra.security.TokenService;
 import com.tocka.renovarAPI.metrics.MetricsCalculatorService;
 import com.tocka.renovarAPI.metrics.PatientMetrics;
 import com.tocka.renovarAPI.metrics.PatientMetricsRepository;
+import com.tocka.renovarAPI.user.LoginResponseDTO;
 import com.tocka.renovarAPI.user.RegisterPatientDTO;
 import com.tocka.renovarAPI.user.User;
 import com.tocka.renovarAPI.user.UserRepository;
@@ -23,21 +25,24 @@ public class PatientService {
     private final PatientMetricsRepository patientMetricsRepository;
     private final PasswordEncoder passwordEncoder;
     private final MetricsCalculatorService metricsCalculator;
+    private final TokenService tokenService;
 
     public PatientService(UserRepository userRepository,
                           PatientRepository patientRepository,
                           PatientMetricsRepository patientMetricsRepository,
                           PasswordEncoder passwordEncoder,
-                          MetricsCalculatorService metricsCalculator) {
+                          MetricsCalculatorService metricsCalculator,
+                          TokenService tokenService) {
         this.userRepository = userRepository;
         this.patientRepository = patientRepository;
         this.patientMetricsRepository = patientMetricsRepository;
         this.passwordEncoder = passwordEncoder;
         this.metricsCalculator = metricsCalculator;
+        this.tokenService = tokenService;
     }
 
     @Transactional
-    public Patient registerPatient(RegisterPatientDTO data) {
+    public LoginResponseDTO registerPatient(RegisterPatientDTO data) {
         // 1. Verificar se email já existe
         if (userRepository.findByEmail(data.email()).isPresent()) {
             throw new EmailAlreadyExistsException(data.email());
@@ -69,6 +74,24 @@ public class PatientService {
         metrics.setTimeRecovered(0);
         patientMetricsRepository.save(metrics);
 
-        return patient;
+        // 5. Gerar token e retornar dados para login automático
+        var token = tokenService.generateToken(user);
+        return new LoginResponseDTO(patient.getName(), user.getEmail(), token);
+    }
+
+    @Transactional(readOnly = true)
+    public PatientProfileDTO getPatientProfile(User user) {
+        Patient patient = patientRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));
+        
+        return new PatientProfileDTO(patient);
+    }
+
+    @Transactional(readOnly = true)
+    public String getPatientNameByUser(User user) {
+        Patient patient = patientRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));
+        
+        return patient.getName();
     }
 }
