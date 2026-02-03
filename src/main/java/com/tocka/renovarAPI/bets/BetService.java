@@ -87,7 +87,7 @@ public class BetService {
         return new BetResponseDTO(bet);
     }
 
-    
+    @Transactional(readOnly = true)
     public Page<BetResponseDTO> listarApostas(User user, Pageable pageable) {
         var patient = patientRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));
@@ -96,7 +96,16 @@ public class BetService {
                 .map(BetResponseDTO::new);
     }
 
+    @Transactional(readOnly = true)
     public List<CalendarResponseDTO> gerarCalendario(User user, int month, int year) {
+        
+        if (month < 1 || month > 12) {
+            throw new IllegalArgumentException("Mês deve estar entre 1 e 12");
+        }
+
+        if (year < 2020 || year > LocalDate.now().getYear() + 1) {
+            throw new IllegalArgumentException("Ano inválido");
+        }
         
         var patient = patientRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));

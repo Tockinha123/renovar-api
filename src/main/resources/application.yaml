@@ -21,7 +21,8 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
-
+  flyway:
+    encoding: UTF-8
 
 api:
   security:

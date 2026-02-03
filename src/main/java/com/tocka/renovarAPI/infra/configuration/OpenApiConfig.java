@@ -29,7 +29,8 @@ public class OpenApiConfig {
                 new Tag().name("Dashboard do Paciente").description("Endpoints relacionados ao dashboard do paciente, é o ponto de entrada para o paciente visualizar suas informações e métricas principais."),
                 new Tag().name("Apostas").description("Endpoints relacionados ao gerenciamento e visualização de apostas."),
                 new Tag().name("Perfil do Paciente").description("Endpoints relacionados ao perfil e dados pessoais do paciente."),
-                new Tag().name("Relatórios Mensais").description("Endpoints relacionados à geração, visualização e download de relatórios mensais de atividades e métricas do paciente.")
+                new Tag().name("Relatórios Mensais").description("Endpoints relacionados à geração, visualização e download de relatórios mensais de atividades e métricas do paciente."),
+                new Tag().name("Avaliações").description("Endpoints relacionados ao gerenciamento e submissão de avaliações diárias e mensais.")
             )
         );
     }

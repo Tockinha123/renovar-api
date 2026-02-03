@@ -17,4 +17,6 @@ public interface BetRepository extends JpaRepository<Bet, UUID> {
     Page<Bet> findByPatientOrderByCreatedAtDesc(Patient patient, Pageable pageable);
 
     List<Bet> findByPatientAndCreatedAtBetween(Patient patient, LocalDateTime start, LocalDateTime end);
+
+    Bet findTopByPatientOrderByCreatedAtDesc(Patient patient);
 }

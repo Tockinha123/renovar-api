@@ -62,6 +62,38 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
     }
 
+    // Avaliação duplicada
+    @ExceptionHandler(AssessmentAlreadySubmittedException.class)
+    public ResponseEntity<ErrorResponse> handleAssessmentAlreadySubmitted(
+            AssessmentAlreadySubmittedException ex, HttpServletRequest request) {
+        ErrorResponse error = new ErrorResponse(
+            LocalDateTime.now(),
+            HttpStatus.CONFLICT.value(),
+            "Avaliação Duplicada",
+            ex.getMessage(),
+            request.getRequestURI()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
+    // Avaliação inválida
+    @ExceptionHandler(InvalidAssessmentSubmissionException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidAssessmentSubmission(
+            InvalidAssessmentSubmissionException ex, HttpServletRequest request) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("timestamp", LocalDateTime.now());
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("error", "Avaliação Inválida");
+        response.put("message", ex.getMessage());
+        response.put("types", ex.getErrorTypes().stream().map(Enum::name).toList());
+        response.put("missingQuestionIds", ex.getMissingQuestionIds().stream().map(Object::toString).toList());
+        response.put("extraQuestionIds", ex.getExtraQuestionIds().stream().map(Object::toString).toList());
+        response.put("duplicateQuestionIds", ex.getDuplicateQuestionIds().stream().map(Object::toString).toList());
+        response.put("path", request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
     // Credenciais inválidas (login)
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(
