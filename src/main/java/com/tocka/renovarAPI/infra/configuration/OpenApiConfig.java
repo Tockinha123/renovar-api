@@ -1,19 +1,25 @@
 package com.tocka.renovarAPI.infra.configuration;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.tags.Tag;
 
 @Configuration
 public class OpenApiConfig {
-    
+
     @Bean
     public OpenAPI customOpenAPI() {
+        final String securitySchemeName = "Bearer Authentication";
+
         return new OpenAPI()
             .info(new Info()
                 .title("Renovar API")
@@ -21,7 +27,20 @@ public class OpenApiConfig {
                 .description(
                     "API do Re:Novar, um sistema de monitoramento e prevenção da ludopatia "
                     + "que utiliza dados comportamentais e aprendizado de máquina para identificar riscos, "
-                    + "gerar alertas e apoiar o autocuidado do usuário."
+                    + "gerar alertas e apoiar o autocuidado do usuário.\n\n"
+                    + "Para autenticar, utilize o endpoint de login para obter o token JWT, "
+                    + "depois clique em 'Authorize' e informe: Bearer {seu-token}"
+                )
+            )
+            .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
+            .components(new Components()
+                .addSecuritySchemes(securitySchemeName,
+                    new SecurityScheme()
+                        .name(securitySchemeName)
+                        .type(SecurityScheme.Type.HTTP)
+                        .scheme("bearer")
+                        .bearerFormat("JWT")
+                        .description("Informe o token JWT obtido no login. Formato: Bearer {token}")
                 )
             )
             .tags(Arrays.asList(
