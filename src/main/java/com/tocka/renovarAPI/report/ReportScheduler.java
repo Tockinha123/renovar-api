@@ -27,7 +27,7 @@ public class ReportScheduler {
     }
 
     /**
-     * Executa TODO DIA 28 às 00:01 (horário de Brasília).
+     * Executa todo DIA 28 às 00:01 (horário de Brasília).
      * Gera relatório do MÊS ATUAL para todos os pacientes ativos.
      * 
      * Exemplo:

@@ -38,6 +38,12 @@ import io.minio.http.Method;
 @Service
 public class ReportService {
 
+    @Value("${minio.url}")
+    private String internalEndpoint;
+
+    @Value("${minio.external-url}")
+    private String externalEndpoint;
+
     @Value("${minio.bucket}")
     private String bucketName;
 
@@ -156,16 +162,6 @@ public class ReportService {
     /**
      * Obtém URL para download do relatório.
      * Só permite download de relatórios de meses anteriores ao atual.
-     * @throws IOException 
-     * @throws IllegalArgumentException 
-     * @throws ServerException 
-     * @throws XmlParserException 
-     * @throws NoSuchAlgorithmException 
-     * @throws InvalidResponseException 
-     * @throws InternalException 
-     * @throws InsufficientDataException 
-     * @throws ErrorResponseException 
-     * @throws InvalidKeyException 
      */
 // ...existing code...
     @Transactional(readOnly = true)
@@ -195,7 +191,7 @@ public class ReportService {
         Map<String, String> reqParams = new HashMap<String, String>();
         reqParams.put("response-content-type", "application/pdf");
 
-        return minioClient.getPresignedObjectUrl(
+        String internalUrl = minioClient.getPresignedObjectUrl(
             GetPresignedObjectUrlArgs.builder()
                 .method(Method.GET)
                 .bucket(bucketName)
@@ -204,6 +200,10 @@ public class ReportService {
                 .extraQueryParams(reqParams)
                 .build()
         );
+
+        String externalUrl = internalUrl.replace(internalEndpoint, externalEndpoint);
+
+        return externalUrl; 
     }
 
 // ...existing code...

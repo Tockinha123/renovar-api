@@ -6,7 +6,7 @@ spring:
     driver-class-name: org.postgresql.Driver
     username: ${DB_USER}
     password: ${DB_PASSWORD}
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT}/${DB_NAME}
+    url: jdbc:postgresql://${DB_HOST:db}:${DB_PORT}/${DB_NAME}
   
   jpa:
     hibernate:
@@ -38,6 +38,7 @@ scalar:
 
 
 minio:
+  external-url: ${MINIO_EXTERNAL_URL}
   url: ${MINIO_URL}
   username: ${MINIO_USER}
   password: ${MINIO_PASSWORD}
