@@ -63,24 +63,8 @@ public class MetricsCalculatorService {
         return minutosTotais / 60;
     }
 
-    /**
-     * Determina o RiskLevel baseado no score atual.
-     * Classificação:
-     * - EXCELENTE: 701-1000
-     * - BOM: 501-700
-     * - REGULAR: 301-500
-     * - ALTO_RISCO: 0-300
-     */
     public RiskLevel calcularRiskLevel(int score) {
-        if (score >= 701) {
-            return RiskLevel.EXCELENTE;
-        } else if (score >= 501) {
-            return RiskLevel.BOM;
-        } else if (score >= 301) {
-            return RiskLevel.REGULAR;
-        } else {
-            return RiskLevel.ALTO_RISCO;
-        }
+        return RiskLevel.fromScore(score);
     }
 
     /**

@@ -13,6 +13,7 @@ import com.tocka.renovarAPI.infra.security.TokenService;
 import com.tocka.renovarAPI.patient.PatientService;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
@@ -40,6 +41,7 @@ public class AuthenticationController {
         summary = "Login do Paciente",
         description = "Autentica um paciente possibilitando o acesso ao sistema."
     )
+    @SecurityRequirements(value = {})
     public ResponseEntity<LoginResponseDTO> login(@RequestBody @Valid UserRequest data) {
         var usernamePassword = new UsernamePasswordAuthenticationToken(data.email(), data.password());
         var auth = authenticationManager.authenticate(usernamePassword);
@@ -58,6 +60,7 @@ public class AuthenticationController {
         summary = "Cadastro do Paciente",
         description = "Registra um novo paciente no sistema e retorna os dados para login automático."
     )
+    @SecurityRequirements(value = {})
     public ResponseEntity<LoginResponseDTO> register(@RequestBody @Valid RegisterPatientDTO data) {
         LoginResponseDTO loginResponse = patientService.registerPatient(data);
         return ResponseEntity.status(HttpStatus.CREATED).body(loginResponse);

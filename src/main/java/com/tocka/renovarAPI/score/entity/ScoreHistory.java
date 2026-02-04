@@ -1,10 +1,11 @@
-package com.tocka.renovarAPI.assessment.entities;
+package com.tocka.renovarAPI.score.entity;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 import com.tocka.renovarAPI.metrics.RiskLevel;
 import com.tocka.renovarAPI.patient.Patient;
+import com.tocka.renovarAPI.score.model.CalculationSource;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -63,6 +64,20 @@ public class ScoreHistory {
 
     @Column(name = "recorded_at", nullable = false)
     private LocalDateTime recordedAt;
+
+    // New audit fields
+    @Column(name = "pgsi_score")
+    private Integer pgsiScore;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "calculation_source", nullable = false)
+    private CalculationSource calculationSource;
+
+    @Column(name = "trigger_entity_id")
+    private UUID triggerEntityId;
+
+    @Column(name = "recalculated_pillars", nullable = false)
+    private String recalculatedPillars;
 
     @PrePersist
     protected void onCreate() {

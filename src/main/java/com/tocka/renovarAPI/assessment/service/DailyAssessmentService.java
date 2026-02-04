@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tocka.renovarAPI.assessment.dto.AnswerDTO;
+import com.tocka.renovarAPI.assessment.dto.AssessmentAnswerDTO;
 import com.tocka.renovarAPI.assessment.dto.DailyAssessmentFeedbackDTO;
+import com.tocka.renovarAPI.assessment.dto.DailyAssessmentHistoryDTO;
 import com.tocka.renovarAPI.assessment.dto.DailyAssessmentQuestionsResponseDTO;
 import com.tocka.renovarAPI.assessment.dto.QuestionDTO;
 import com.tocka.renovarAPI.assessment.dto.QuestionOptionDTO;
@@ -20,13 +22,16 @@ import com.tocka.renovarAPI.assessment.entities.AssessmentOption;
 import com.tocka.renovarAPI.assessment.entities.AssessmentQuestion;
 import com.tocka.renovarAPI.assessment.entities.AssessmentType;
 import com.tocka.renovarAPI.assessment.entities.DailyAssessment;
-import com.tocka.renovarAPI.assessment.entities.ScoreHistory;
+import com.tocka.renovarAPI.assessment.filter.DailyAssessmentFilter;
+import com.tocka.renovarAPI.assessment.specification.DailyAssessmentSpecification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import com.tocka.renovarAPI.assessment.repository.AssessmentAnswerRepository;
 import com.tocka.renovarAPI.assessment.repository.AssessmentOptionRepository;
 import com.tocka.renovarAPI.assessment.repository.AssessmentQuestionRepository;
 import com.tocka.renovarAPI.assessment.repository.DailyAssessmentRepository;
 import com.tocka.renovarAPI.assessment.repository.MonthlyAssessmentRepository;
-import com.tocka.renovarAPI.assessment.repository.ScoreHistoryRepository;
 import com.tocka.renovarAPI.assessment.validation.AssessmentSubmissionValidator;
 import com.tocka.renovarAPI.infra.exception.AssessmentAlreadySubmittedException;
 import com.tocka.renovarAPI.metrics.PatientMetrics;
@@ -34,6 +39,10 @@ import com.tocka.renovarAPI.metrics.PatientMetricsRepository;
 import com.tocka.renovarAPI.metrics.RiskLevel;
 import com.tocka.renovarAPI.patient.Patient;
 import com.tocka.renovarAPI.patient.PatientRepository;
+import com.tocka.renovarAPI.score.ScoreCalculationService;
+import com.tocka.renovarAPI.score.ScoreHistoryService;
+import com.tocka.renovarAPI.score.entity.ScoreHistory;
+import com.tocka.renovarAPI.score.model.AssessmentPillarScores;
 import com.tocka.renovarAPI.user.User;
 
 @Service
@@ -42,13 +51,11 @@ public class DailyAssessmentService {
     private final AssessmentQuestionRepository questionRepository;
     private final AssessmentOptionRepository optionRepository;
     private final DailyAssessmentRepository dailyAssessmentRepository;
-    private final MonthlyAssessmentRepository monthlyAssessmentRepository;
     private final AssessmentAnswerRepository answerRepository;
     private final PatientRepository patientRepository;
     private final PatientMetricsRepository metricsRepository;
-    private final AssessmentScoringService scoringService;
+    private final ScoreCalculationService scoreCalculationService;
     private final ScoreHistoryService scoreHistoryService;
-    private final ScoreHistoryRepository scoreHistoryRepository;
     private final AssessmentSubmissionValidator submissionValidator;
 
     public DailyAssessmentService(
@@ -59,20 +66,17 @@ public class DailyAssessmentService {
             AssessmentAnswerRepository answerRepository,
             PatientRepository patientRepository,
             PatientMetricsRepository metricsRepository,
-            AssessmentScoringService scoringService,
+            ScoreCalculationService scoreCalculationService,
             ScoreHistoryService scoreHistoryService,
-            ScoreHistoryRepository scoreHistoryRepository,
             AssessmentSubmissionValidator submissionValidator) {
         this.questionRepository = questionRepository;
         this.optionRepository = optionRepository;
         this.dailyAssessmentRepository = dailyAssessmentRepository;
-        this.monthlyAssessmentRepository = monthlyAssessmentRepository;
         this.answerRepository = answerRepository;
         this.patientRepository = patientRepository;
         this.metricsRepository = metricsRepository;
-        this.scoringService = scoringService;
+        this.scoreCalculationService = scoreCalculationService;
         this.scoreHistoryService = scoreHistoryService;
-        this.scoreHistoryRepository = scoreHistoryRepository;
         this.submissionValidator = submissionValidator;
     }
 
@@ -146,27 +150,20 @@ public class DailyAssessmentService {
         }
         answerRepository.saveAll(answersToSave);
 
-        ScoreCalculationResult calculation = scoringService.recalculateFullScore(patient, metrics, cravingLevel);
-        metrics.setCurrentScore(calculation.totalScore());
-        RiskLevel scoreRiskLevel = scoringService.deriveRiskLevelFromScore(calculation.totalScore());
-        metrics.setCurrentRiskLevel(scoreRiskLevel);
+        // Calculate only assessment pillars (p4-p6), preserving bet pillars (p1-p3)
+        AssessmentPillarScores assessmentScores = scoreCalculationService.calculateAssessmentPillars(cravingLevel);
+        
+        // Create score history entry, preserving bet pillars from latest history
+        ScoreHistory history = scoreHistoryService.createScoreHistoryForDailyAssessment(
+                patient, 
+                assessmentScores, 
+                savedAssessment.getId());
+
+        // Update metrics with new score and risk level
+        metrics.setCurrentScore(history.getTotalScore());
+        metrics.setCurrentRiskLevel(history.getScoreRiskLevel());
         metrics.setLastCheckin(LocalDateTime.now());
         metricsRepository.save(metrics);
-
-        RiskLevel pgsiRiskLevel = resolveLatestPgsiRiskLevel(patient);
-
-        ScoreHistory history = new ScoreHistory();
-        history.setPatient(patient);
-        history.setTotalScore(calculation.totalScore());
-        history.setP1Score(calculation.p1Score());
-        history.setP2Score(calculation.p2Score());
-        history.setP3Score(calculation.p3Score());
-        history.setP4Score(calculation.p4Score());
-        history.setP5Score(calculation.p5Score());
-        history.setP6Score(calculation.p6Score());
-        history.setScoreRiskLevel(scoreRiskLevel);
-        history.setPgsiRiskLevel(pgsiRiskLevel);
-        scoreHistoryService.recordScore(history);
 
         DailyAssessmentFeedbackDTO feedback = buildFeedback(patient, metrics);
         List<QuestionDTO> questions = buildQuestions(AssessmentType.DAILY);
@@ -175,12 +172,12 @@ public class DailyAssessmentService {
 
     private Patient getPatient(User user) {
         return patientRepository.findByUser(user)
-                .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));
+                .orElseThrow(() -> new RuntimeException("Paciente nao encontrado"));
     }
 
     private PatientMetrics getMetrics(Patient patient) {
         return metricsRepository.findByPatient(patient)
-                .orElseThrow(() -> new RuntimeException("Métricas não encontradas"));
+                .orElseThrow(() -> new RuntimeException("Metricas nao encontradas"));
     }
 
     private List<QuestionDTO> buildQuestions(AssessmentType type) {
@@ -197,7 +194,7 @@ public class DailyAssessmentService {
     }
 
     private DailyAssessmentFeedbackDTO buildFeedback(Patient patient, PatientMetrics metrics) {
-        List<ScoreHistory> history = scoreHistoryRepository.findTop2ByPatientOrderByRecordedAtDesc(patient);
+        List<ScoreHistory> history = scoreHistoryService.findTop2ByPatient(patient);
         ScoreHistory latest = history.isEmpty() ? null : history.get(0);
         Integer currentScore = latest != null ? latest.getTotalScore() : metrics.getCurrentScore();
         if (currentScore == null) {
@@ -205,17 +202,65 @@ public class DailyAssessmentService {
         }
         Integer previousScore = history.size() > 1 ? history.get(1).getTotalScore() : null;
 
-        double variation = scoringService.calculateVariation(previousScore, currentScore);
+        double variation = scoreCalculationService.calculateVariation(previousScore, currentScore);
         RiskLevel scoreRiskLevel = latest != null && latest.getScoreRiskLevel() != null
                 ? latest.getScoreRiskLevel()
-                : scoringService.deriveRiskLevelFromScore(currentScore);
+                : scoreCalculationService.deriveRiskLevelFromScore(currentScore);
 
         return new DailyAssessmentFeedbackDTO(currentScore + "/1000", variation, scoreRiskLevel);
     }
 
-    private RiskLevel resolveLatestPgsiRiskLevel(Patient patient) {
-        return monthlyAssessmentRepository.findTopByPatientOrderByReferenceYearDescReferenceMonthDesc(patient)
-                .map(monthly -> scoringService.calculatePgsiRiskLevel(monthly.getPgsiScore()))
-                .orElse(null);
+    public Page<DailyAssessmentHistoryDTO> getDailyAssessmentHistory(User user, DailyAssessmentFilter filter, Pageable pageable) {
+        Patient patient = getPatient(user);
+        
+        var spec = DailyAssessmentSpecification.withFilters(
+            patient,
+            filter.getFromDate(),
+            filter.getToDate()
+        );
+        
+        return dailyAssessmentRepository.findAll(spec, pageable)
+            .map(assessment -> mapToHistoryDTO(assessment, patient));
+    }
+
+    private DailyAssessmentHistoryDTO mapToHistoryDTO(DailyAssessment assessment, Patient patient) {
+        List<AssessmentAnswerDTO> answers = answerRepository.findByDailyAssessment(assessment).stream()
+            .map(answer -> new AssessmentAnswerDTO(
+                answer.getQuestion().getId(),
+                answer.getQuestion().getTitle(),
+                answer.getOption().getId(),
+                answer.getOption().getLabel(),
+                answer.getOption().getScoreValue()
+            ))
+            .toList();
+
+        // Build feedback for this specific assessment date
+        DailyAssessmentFeedbackDTO feedback = buildFeedbackForDate(patient, assessment);
+
+        return new DailyAssessmentHistoryDTO(
+            assessment.getId(),
+            assessment.getAssessmentDate(),
+            answers,
+            feedback
+        );
+    }
+
+    private DailyAssessmentFeedbackDTO buildFeedbackForDate(Patient patient, DailyAssessment assessment) {
+        // Get the score history up to this assessment date
+        List<ScoreHistory> history = scoreHistoryService.findByPatientBeforeDate(
+            patient, 
+            assessment.getCreatedAt()
+        );
+        
+        ScoreHistory latest = history.isEmpty() ? null : history.get(0);
+        Integer currentScore = latest != null ? latest.getTotalScore() : 0;
+        Integer previousScore = history.size() > 1 ? history.get(1).getTotalScore() : null;
+
+        double variation = scoreCalculationService.calculateVariation(previousScore, currentScore);
+        RiskLevel scoreRiskLevel = latest != null && latest.getScoreRiskLevel() != null
+                ? latest.getScoreRiskLevel()
+                : scoreCalculationService.deriveRiskLevelFromScore(currentScore);
+
+        return new DailyAssessmentFeedbackDTO(currentScore + "/1000", variation, scoreRiskLevel);
     }
 }

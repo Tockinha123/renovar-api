@@ -3,6 +3,10 @@ package com.tocka.renovarAPI.bets;
 import com.tocka.renovarAPI.metrics.MetricsCalculatorService;
 import com.tocka.renovarAPI.metrics.PatientMetricsRepository;
 import com.tocka.renovarAPI.patient.PatientRepository;
+import com.tocka.renovarAPI.score.ScoreCalculationService;
+import com.tocka.renovarAPI.score.ScoreHistoryService;
+import com.tocka.renovarAPI.score.entity.ScoreHistory;
+import com.tocka.renovarAPI.score.model.BetPillarScores;
 import com.tocka.renovarAPI.user.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,19 +29,25 @@ public class BetService {
     private final PatientRepository patientRepository;
     private final PatientMetricsRepository metricsRepository;
     private final MetricsCalculatorService calculator;
+    private final ScoreCalculationService scoreCalculationService;
+    private final ScoreHistoryService scoreHistoryService;
 
     public BetService(BetRepository betRepository,
                       PatientRepository patientRepository,
                       PatientMetricsRepository metricsRepository,
-                      MetricsCalculatorService calculator) {
+                      MetricsCalculatorService calculator,
+                      ScoreCalculationService scoreCalculationService,
+                      ScoreHistoryService scoreHistoryService) {
         this.betRepository = betRepository;
         this.patientRepository = patientRepository;
         this.metricsRepository = metricsRepository;
         this.calculator = calculator;
+        this.scoreCalculationService = scoreCalculationService;
+        this.scoreHistoryService = scoreHistoryService;
     }
 
-@Transactional
-    public BetResponseDTO registrarAposta(User user, BetRequestDTO dados) { // Mudou de void para BetResponseDTO
+    @Transactional
+    public BetResponseDTO registrarAposta(User user, BetRequestDTO dados) {
         // 1. Buscas
         var patient = patientRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Paciente não encontrado"));
@@ -72,18 +82,20 @@ public class BetService {
         int novaStreak = calculator.aplicarSoftReset(metrics.getCleanDaysStreak());
         metrics.setCleanDaysStreak(novaStreak);
 
-        int novoScore = calculator.calcularNovoScoreAposRecaida(
-                metrics.getCurrentScore(), 
-                dados.amount(), 
-                patient.getFinancialBaseline()
-        );
-        metrics.setCurrentScore(novoScore);
+        // 5. Calculate bet pillars (p1-p3) and create score history
+        // Note: We need to recalculate after updating streak since p2 depends on streak
+        BetPillarScores betScores = scoreCalculationService.calculateBetPillars(patient, metrics);
         
-        metrics.setCurrentRiskLevel(calculator.calcularRiskLevel(novoScore));
+        // Create score history entry, preserving assessment pillars (p4-p6) from latest history
+        ScoreHistory history = scoreHistoryService.createScoreHistoryForBet(patient, betScores, bet.getId());
+
+        // 6. Update metrics with new score from history
+        metrics.setCurrentScore(history.getTotalScore());
+        metrics.setCurrentRiskLevel(history.getScoreRiskLevel());
 
         metricsRepository.save(metrics);
 
-        // 5. Retorna o DTO da aposta criada
+        // 7. Retorna o DTO da aposta criada
         return new BetResponseDTO(bet);
     }
 

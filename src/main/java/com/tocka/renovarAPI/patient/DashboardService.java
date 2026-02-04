@@ -51,7 +51,7 @@ public class DashboardService {
         // 4. Monta o DTO
         DashboardDTO dto = new DashboardDTO(
             metrics.getCurrentScore(),
-            metrics.getCurrentRiskLevel() != null ? metrics.getCurrentRiskLevel().name() : "N/A",
+            metrics.getCurrentRiskLevel(),
             diasLimposStreak,
             economiaTotal,
             horasTotais,
