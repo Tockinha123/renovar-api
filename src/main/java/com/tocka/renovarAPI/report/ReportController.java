@@ -77,10 +77,23 @@ public class ReportController {
         return ResponseEntity.ok(report);
     }
 
+    @GetMapping("/download")
+    @Operation(
+        summary = "Baixar Relatório do Período Atual",
+        description = "Identifica automaticamente o relatório do período atual (ciclo dia 28 a dia 27) " +
+                      "e retorna a URL de download. Se o relatório ainda não existir, ele é gerado automaticamente. " +
+                      "Pacientes que criaram conta após o dia 28 só terão acesso ao relatório do mês seguinte."
+    )
+    public ResponseEntity<DownloadUrlDTO> downloadCurrentReport(
+            @AuthenticationPrincipal User user) throws Exception {
+        DownloadUrlDTO url = reportService.getOrGenerateCurrentReport(user);
+        return ResponseEntity.ok(url);
+    }
+
     @GetMapping("/{reportId}/download")
     @Operation(
-        summary = "Obter URL de Download",
-        description = "Retorna uma URL pré-assinada para download do PDF. Só funciona para relatórios de meses anteriores."
+        summary = "Obter URL de Download por ID",
+        description = "Retorna uma URL pré-assinada para download do PDF de um relatório específico."
     )
     public ResponseEntity<DownloadUrlDTO> getDownloadUrl(
             @AuthenticationPrincipal User user,

@@ -10,8 +10,6 @@ public record MonthlyReportDataDTO(
     long horasSalvas,
     BigDecimal dinheiroEconomizado,
     int quantidadeApostas,
-    int scoreInicio,
-    int scoreFim,
-    int scoreMedio,
+    double scoreMedio,
     String fraseMotivar
 ) {}

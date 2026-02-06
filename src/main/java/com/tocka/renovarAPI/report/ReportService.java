@@ -9,9 +9,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.time.format.TextStyle;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +25,7 @@ import com.tocka.renovarAPI.bets.Bet;
 import com.tocka.renovarAPI.bets.BetRepository;
 import com.tocka.renovarAPI.patient.Patient;
 import com.tocka.renovarAPI.patient.PatientRepository;
+import com.tocka.renovarAPI.score.repository.ScoreHistoryRepository;
 import com.tocka.renovarAPI.user.User;
 
 import io.minio.GetPresignedObjectUrlArgs;
@@ -52,19 +56,167 @@ public class ReportService {
     private final BetRepository betRepository;
     private final PdfGeneratorService pdfGenerator;
     private final MinioClient minioClient;
+    private final ScoreHistoryRepository scoreHistoryRepository;
 
     public ReportService(ReportRepository reportRepository,
                          PatientRepository patientRepository,
                          BetRepository betRepository,
                          PdfGeneratorService pdfGenerator,
-                         MinioClient minioClient) {
+                         MinioClient minioClient,
+                         ScoreHistoryRepository scoreHistoryRepository) {
         this.reportRepository = reportRepository;
         this.patientRepository = patientRepository;
         this.betRepository = betRepository;
         this.pdfGenerator = pdfGenerator;
         this.minioClient = minioClient;
+        this.scoreHistoryRepository = scoreHistoryRepository;
     }
 
+    // ==================== LÓGICA DE PERÍODO E ACESSO ====================
+
+    /**
+     * Determina o mês de referência do relatório baseado no ciclo dia 28 a dia 27.
+     * 
+     * Exemplos:
+     * - Hoje = 15/02/2025 → período ativo = 28/01 a 27/02 → referência = Janeiro
+     * - Hoje = 28/02/2025 → período ativo = 28/02 a 27/03 → referência = Fevereiro
+     * - Hoje = 05/01/2025 → período ativo = 28/12 a 27/01 → referência = Dezembro/2024
+     */
+    public YearMonth determineCurrentReportReference() {
+        LocalDate hoje = LocalDate.now();
+        int dayOfMonth = hoje.getDayOfMonth();
+
+        if (dayOfMonth >= 28) {
+            // Estamos no início do novo ciclo (dia 28+), referência é o mês atual
+            return YearMonth.from(hoje);
+        } else {
+            // Estamos entre dia 1-27, referência é o mês anterior
+            return YearMonth.from(hoje.minusMonths(1));
+        }
+    }
+
+    /**
+     * Determina o primeiro mês de referência válido para o paciente.
+     * 
+     * Regra: se o paciente criou a conta antes do dia 28 do mês X,
+     * ele tem acesso ao relatório de X em diante.
+     * Se criou no dia 28 ou depois, o primeiro relatório válido é X+1.
+     * 
+     * Exemplo:
+     * - Conta criada 05/01 → primeiro relatório = Janeiro (gerado dia 28/01)
+     * - Conta criada 28/01 → primeiro relatório = Fevereiro (gerado dia 28/02)
+     * - Conta criada 29/01 → primeiro relatório = Fevereiro (gerado dia 28/02)
+     */
+    private YearMonth getFirstValidReportMonth(Patient patient) {
+        LocalDateTime createdAt = patient.getCreatedAt();
+        if (createdAt == null) {
+            throw new RuntimeException("Não foi possível determinar a data de criação da conta.");
+        }
+
+        LocalDate creationDate = createdAt.toLocalDate();
+
+        if (creationDate.getDayOfMonth() < 28) {
+            // Entrou antes do dia 28 → já pega o relatório desse mês
+            return YearMonth.from(creationDate);
+        } else {
+            // Entrou dia 28+ → primeiro relatório é o mês seguinte
+            return YearMonth.from(creationDate).plusMonths(1);
+        }
+    }
+
+    /**
+     * Verifica se o paciente pode acessar o relatório de um determinado mês.
+     */
+    private boolean canAccessReport(Patient patient, YearMonth referenceMonth) {
+        YearMonth firstValid = getFirstValidReportMonth(patient);
+        return !referenceMonth.isBefore(firstValid);
+    }
+
+    /**
+     * Endpoint inteligente: obtém ou gera o relatório do período atual.
+     * 
+     * Fluxo:
+     * 1. Determina qual mês de referência é relevante
+     * 2. Verifica se o paciente já estava ativo nesse período
+     * 3. Se o relatório já existe → retorna URL de download
+     * 4. Se não existe → gera, salva e retorna URL de download
+     */
+    @Transactional
+    public DownloadUrlDTO getOrGenerateCurrentReport(User user)
+            throws InvalidKeyException, ErrorResponseException, InsufficientDataException,
+                   InternalException, InvalidResponseException, NoSuchAlgorithmException,
+                   XmlParserException, ServerException, IllegalArgumentException, IOException {
+
+        Patient patient = getPatient(user);
+        YearMonth referenceMonth = determineCurrentReportReference();
+
+        // Valida se o paciente já estava ativo nesse período
+        if (!canAccessReport(patient, referenceMonth)) {
+            YearMonth firstValid = getFirstValidReportMonth(patient);
+            String monthName = firstValid.getMonth().getDisplayName(TextStyle.FULL, Locale.of("pt", "BR"));
+            throw new RuntimeException(
+                String.format(
+                    "Seu primeiro relatório será o de %s/%d. " +
+                    "Continue usando a plataforma e ele estará disponível em breve!",
+                    monthName, firstValid.getYear()
+                )
+            );
+        }
+
+        // Tenta encontrar relatório existente para esse período
+        Optional<Report> existingReport = reportRepository
+                .findByPatientAndReferenceMonthAndReferenceYear(
+                    patient,
+                    referenceMonth.getMonthValue(),
+                    referenceMonth.getYear()
+                );
+
+        Report report;
+
+        if (existingReport.isPresent()) {
+            report = existingReport.get();
+
+            // Se deu erro na geração anterior, tenta gerar novamente
+            if (report.getStatus() == ReportStatus.ERROR) {
+                reportRepository.delete(report);
+                reportRepository.flush();
+                ReportResponseDTO generated = generateMonthlyReport(
+                    user, referenceMonth.getMonthValue(), referenceMonth.getYear());
+                report = reportRepository.findById(generated.id())
+                        .orElseThrow(() -> new RuntimeException("Erro ao recuperar relatório gerado"));
+            }
+
+            if (report.getStatus() == ReportStatus.GENERATING) {
+                throw new RuntimeException("Seu relatório está sendo gerado. Tente novamente em alguns instantes.");
+            }
+
+        } else {
+            // Não existe → gera automaticamente
+            ReportResponseDTO generated = generateMonthlyReport(
+                user, referenceMonth.getMonthValue(), referenceMonth.getYear());
+            report = reportRepository.findById(generated.id())
+                    .orElseThrow(() -> new RuntimeException("Erro ao recuperar relatório gerado"));
+        }
+
+        // Gera URL pré-assinada para download
+        Map<String, String> reqParams = new HashMap<>();
+        reqParams.put("response-content-type", "application/pdf");
+
+        String internalUrl = minioClient.getPresignedObjectUrl(
+            GetPresignedObjectUrlArgs.builder()
+                .method(Method.GET)
+                .bucket(bucketName)
+                .object(report.getS3Key())
+                .expiry(2, TimeUnit.HOURS)
+                .extraQueryParams(reqParams)
+                .build()
+        );
+
+        String externalUrl = internalUrl.replace(internalEndpoint, externalEndpoint);
+        return new DownloadUrlDTO(externalUrl);
+    }
+
+    // ==================== LISTAGEM E RELATÓRIOS ====================
 
     @Transactional(readOnly = true)
     public List<ReportResponseDTO> listReports(User user) {
@@ -176,7 +328,7 @@ public class ReportService {
             throw new RuntimeException("Relatório ainda não está pronto");
         }
 
-        // ✅ CORREÇÃO: Download disponível a partir do dia 28 do mês de referência
+        //Download disponível a partir do dia 28 do mês de referência
         YearMonth mesRelatorio = report.getReferenceYearMonth();
         LocalDate dataLiberacao = mesRelatorio.atDay(28);
         LocalDate hoje = LocalDate.now();
@@ -247,15 +399,14 @@ public class ReportService {
                 .multiply(BigDecimal.valueOf(diasLimposNoMes));
         long horasSalvas = (long) diasLimposNoMes * patient.getSessionTimeBaseline() / 60;
 
+        Optional<Double> mediaJaneiro = scoreHistoryRepository
+            .findAverageScoreByPatientAndMonth(patient, mes.getYear(), mes.getMonthValue());
 
-        // TODO: PRECISO MUDAR ESSA LÓGICA QUANDO CRIAR A ENTIDADE SCORE.
-        // Score médio (simplificado - você pode melhorar com snapshot diário)
-        int scoreInicio = 500; // Poderia buscar de um histórico
-        int scoreFim = 500;    // Poderia buscar das métricas atuais
-        int scoreMedio = (scoreInicio + scoreFim) / 2;
+        double media = mediaJaneiro.orElse(0.0);
 
+        
         // Frase motivacional baseada no desempenho
-        String frase = gerarFraseMotivacional(quantidadeApostas, maiorStreak, scoreMedio);
+        String frase = gerarFraseMotivacional(quantidadeApostas, maiorStreak, media);
 
         return new MonthlyReportDataDTO(
             patient.getName(),
@@ -265,9 +416,7 @@ public class ReportService {
             horasSalvas,
             economia,
             quantidadeApostas,
-            scoreInicio,
-            scoreFim,
-            scoreMedio,
+            media,
             frase
         );
     }
@@ -310,7 +459,7 @@ public class ReportService {
                 .count();
     }
 
-    private String gerarFraseMotivacional(int apostas, int streak, int score) {
+    private String gerarFraseMotivacional(int apostas, int streak, double score) {
         if (apostas == 0) {
             return "Parabéns! Você passou o mês inteiro sem apostar. Continue assim, você está no caminho certo!";
         }

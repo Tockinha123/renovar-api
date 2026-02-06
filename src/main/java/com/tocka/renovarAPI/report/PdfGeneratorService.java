@@ -179,11 +179,6 @@ public class PdfGeneratorService {
                         font-weight: bold;
                         margin: 10px 0;
                     }
-                    .score-details {
-                        color: #666666;
-                        font-size: 13px;
-                        margin-top: 10px;
-                    }
                     .motivation-section {
                         padding: 30px 25px;
                         background-color: #FFFFFF;
@@ -260,11 +255,8 @@ public class PdfGeneratorService {
                     
                     <!-- Score Section -->
                     <div class="score-section">
-                        <div class="score-label">Seu score médio foi:</div>
-                        <div class="score-value" style="color: %s;">%d</div>
-                        <div class="score-details">
-                            Início do mês: %d pontos | Fim do mês: %d pontos
-                        </div>
+                        <div class="score-label">Seu score médio do mês foi:</div>
+                        <div class="score-value" style="color: %s;">%.2f</div>
                     </div>
                     
                     <!-- Motivation Section -->
@@ -292,14 +284,12 @@ public class PdfGeneratorService {
                 data.quantidadeApostas(),
                 scoreColor,
                 data.scoreMedio(),
-                data.scoreInicio(),
-                data.scoreFim(),
                 data.fraseMotivar(),
                 dataGeracao
             );
     }
 
-    private String getScoreColor(int score) {
+    private String getScoreColor(double score) {
         if (score >= 701) return "#2E7D32"; // Verde escuro - Excelente
         if (score >= 501) return "#4CAF50"; // Verde - Bom
         if (score >= 301) return "#FFC107"; // Amarelo - Regular
