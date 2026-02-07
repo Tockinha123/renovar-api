@@ -41,6 +41,7 @@ scalar:
   theme: deep-space
   dark-mode: true
   layout: modern
+  path: /scalar/docs/
 
 
 minio:
@@ -49,3 +50,6 @@ minio:
   username: ${MINIO_USER}
   password: ${MINIO_PASSWORD}
   bucket: ${MINIO_BUCKET_REPORT}
+
+server:
+  forward-headers-strategy: framework
