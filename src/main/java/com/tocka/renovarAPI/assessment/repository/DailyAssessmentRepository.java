@@ -16,4 +16,6 @@ public interface DailyAssessmentRepository extends JpaRepository<DailyAssessment
     boolean existsByPatientAndAssessmentDate(Patient patient, LocalDate assessmentDate);
 
     Optional<DailyAssessment> findByPatientAndAssessmentDate(Patient patient, LocalDate assessmentDate);
+
+    long countByPatientAndAssessmentDateBetween(Patient patient, LocalDate from, LocalDate to);
 }

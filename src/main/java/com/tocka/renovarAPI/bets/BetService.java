@@ -6,7 +6,7 @@ import com.tocka.renovarAPI.patient.PatientRepository;
 import com.tocka.renovarAPI.score.ScoreCalculationService;
 import com.tocka.renovarAPI.score.ScoreHistoryService;
 import com.tocka.renovarAPI.score.entity.ScoreHistory;
-import com.tocka.renovarAPI.score.model.BetPillarScores;
+import com.tocka.renovarAPI.score.model.AllPillarScores;
 import com.tocka.renovarAPI.user.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -82,14 +82,22 @@ public class BetService {
         int novaStreak = calculator.aplicarSoftReset(metrics.getCleanDaysStreak());
         metrics.setCleanDaysStreak(novaStreak);
 
-        // 5. Calculate bet pillars (p1-p3) and create score history
-        // Note: We need to recalculate after updating streak since p2 depends on streak
-        BetPillarScores betScores = scoreCalculationService.calculateBetPillars(patient, metrics);
+        // 5. Calcular TODOS os 6 pilares (MUDANÇA v2)
+        // Buscar último P4 pra calcular decay
+        ScoreHistoryService.LatestPillarValues latestPillars = scoreHistoryService.getLatestPillarValues(patient);
         
-        // Create score history entry, preserving assessment pillars (p4-p6) from latest history
-        ScoreHistory history = scoreHistoryService.createScoreHistoryForBet(patient, betScores, bet.getId());
+        AllPillarScores scores = scoreCalculationService.calculateAllForBet(
+                patient,
+                metrics,
+                dados.amount(),           // P3 avalia a aposta ATUAL
+                latestPillars.p4()        // Último P4 pra decay
+        );
 
-        // 6. Update metrics with new score from history
+        // Criar registro no histórico com todos os 6 pilares
+        ScoreHistory history = scoreHistoryService.createScoreHistoryForBet(
+                patient, scores, bet.getId());
+
+        // 6. Atualizar métricas com novo score
         metrics.setCurrentScore(history.getTotalScore());
         metrics.setCurrentRiskLevel(history.getScoreRiskLevel());
 

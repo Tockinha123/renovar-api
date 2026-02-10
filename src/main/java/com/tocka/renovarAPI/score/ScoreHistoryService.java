@@ -10,14 +10,23 @@ import org.springframework.stereotype.Service;
 import com.tocka.renovarAPI.metrics.RiskLevel;
 import com.tocka.renovarAPI.patient.Patient;
 import com.tocka.renovarAPI.score.entity.ScoreHistory;
-import com.tocka.renovarAPI.score.model.AssessmentPillarScores;
-import com.tocka.renovarAPI.score.model.BetPillarScores;
+import com.tocka.renovarAPI.score.model.AllPillarScores;
 import com.tocka.renovarAPI.score.model.CalculationSource;
 import com.tocka.renovarAPI.score.repository.ScoreHistoryRepository;
 
 /**
- * Service responsible for managing score history records.
- * Provides methods to create, query, and manage score history entries.
+ * Service responsável por gerenciar o histórico de scores.
+ * 
+ * =====================================================================
+ * MUDANÇA DE DESIGN (v2):
+ * =====================================================================
+ * 
+ * Simplificado: tanto aposta quanto avaliação agora enviam AllPillarScores
+ * (todos os 6 pilares). Não existe mais "copiar metade do último registro".
+ * 
+ * O único fluxo que ainda preserva pilares é a Avaliação Mensal (PGSI),
+ * que não afeta nenhum pilar — só atualiza o score PGSI separado.
+ * =====================================================================
  */
 @Service
 public class ScoreHistoryService {
@@ -25,130 +34,64 @@ public class ScoreHistoryService {
     private final ScoreHistoryRepository scoreHistoryRepository;
     private final ScoreCalculationService scoreCalculationService;
 
-    public ScoreHistoryService(ScoreHistoryRepository scoreHistoryRepository, 
+    public ScoreHistoryService(ScoreHistoryRepository scoreHistoryRepository,
                                ScoreCalculationService scoreCalculationService) {
         this.scoreHistoryRepository = scoreHistoryRepository;
         this.scoreCalculationService = scoreCalculationService;
     }
 
-    /**
-     * Create a new score history entry.
-     * 
-     * @param patient The patient
-     * @param p1Score Bet pillar 1 (clean days ratio)
-     * @param p2Score Bet pillar 2 (streak)
-     * @param p3Score Bet pillar 3 (financial)
-     * @param p4Score Assessment pillar 4 (craving)
-     * @param p5Score Assessment pillar 5 (check-in)
-     * @param p6Score Assessment pillar 6 (reserved)
-     * @param pgsiRiskLevel PGSI risk level (nullable)
-     * @param pgsiScore Raw PGSI score (nullable, only for monthly assessments)
-     * @param calculationSource What triggered this score calculation
-     * @param triggerEntityId ID of the entity that triggered the change (nullable)
-     * @param recalculatedPillars Which pillars were recalculated (e.g., "p1,p2,p3" or "p4,p5,p6")
-     * @return The saved ScoreHistory entry
-     */
-    public ScoreHistory createScoreHistory(
-            Patient patient,
-            int p1Score, int p2Score, int p3Score,
-            int p4Score, int p5Score, int p6Score,
-            RiskLevel pgsiRiskLevel,
-            Integer pgsiScore,
-            CalculationSource calculationSource,
-            UUID triggerEntityId,
-            String recalculatedPillars) {
-
-        int totalScore = scoreCalculationService.calculateTotalScore(p1Score, p2Score, p3Score, p4Score, p5Score, p6Score);
-        RiskLevel scoreRiskLevel = scoreCalculationService.deriveRiskLevelFromScore(totalScore);
-
-        ScoreHistory history = new ScoreHistory();
-        history.setPatient(patient);
-        history.setTotalScore(totalScore);
-        history.setP1Score(p1Score);
-        history.setP2Score(p2Score);
-        history.setP3Score(p3Score);
-        history.setP4Score(p4Score);
-        history.setP5Score(p5Score);
-        history.setP6Score(p6Score);
-        history.setScoreRiskLevel(scoreRiskLevel);
-        history.setPgsiRiskLevel(pgsiRiskLevel);
-        history.setPgsiScore(pgsiScore);
-        history.setCalculationSource(calculationSource);
-        history.setTriggerEntityId(triggerEntityId);
-        history.setRecalculatedPillars(recalculatedPillars);
-
-        return scoreHistoryRepository.save(history);
-    }
+    // =====================================================================
+    // CRIAÇÃO DE REGISTROS
+    // =====================================================================
 
     /**
-     * Create score history entry for bet operations.
-     * Preserves assessment pillars (p4-p6) from latest history.
+     * Cria registro de score para APOSTA.
+     * Recebe todos os 6 pilares já calculados.
      */
     public ScoreHistory createScoreHistoryForBet(
-            Patient patient,
-            BetPillarScores betScores,
-            UUID betId) {
-
-        // Get current assessment pillar values from latest history
-        LatestPillarValues latest = getLatestPillarValues(patient);
+            Patient patient, AllPillarScores scores, UUID betId) {
 
         return createScoreHistory(
-                patient,
-                betScores.p1Score(), betScores.p2Score(), betScores.p3Score(),
-                latest.p4, latest.p5, latest.p6,
-                latest.pgsiRiskLevel,
-                latest.pgsiScore,
+                patient, scores,
+                getLatestPgsiRiskLevel(patient),
+                getLatestPgsiScore(patient),
                 CalculationSource.BET_OPERATION,
                 betId,
-                "p1,p2,p3");
+                "p1,p2,p3,p4,p5,p6");
     }
 
     /**
-     * Create score history entry for daily assessments.
-     * Preserves bet pillars (p1-p3) from latest history.
+     * Cria registro de score para AVALIAÇÃO DIÁRIA.
+     * Recebe todos os 6 pilares já calculados.
      */
     public ScoreHistory createScoreHistoryForDailyAssessment(
-            Patient patient,
-            AssessmentPillarScores assessmentScores,
-            UUID dailyAssessmentId) {
-
-        // Get current bet pillar values from latest history
-        LatestPillarValues latest = getLatestPillarValues(patient);
+            Patient patient, AllPillarScores scores, UUID dailyAssessmentId) {
 
         return createScoreHistory(
-                patient,
-                latest.p1, latest.p2, latest.p3,
-                assessmentScores.p4Score(), assessmentScores.p5Score(), assessmentScores.p6Score(),
-                latest.pgsiRiskLevel,
-                latest.pgsiScore,
+                patient, scores,
+                getLatestPgsiRiskLevel(patient),
+                getLatestPgsiScore(patient),
                 CalculationSource.DAILY_ASSESSMENT,
                 dailyAssessmentId,
-                "p4,p5,p6");
+                "p1,p2,p3,p4,p5,p6");
     }
 
     /**
-     * Create score history entry for monthly assessments (PGSI).
-     * Preserves ALL pillars (p1-p6) from latest history.
-     * Only updates PGSI score and risk level - no pillar recalculation.
+     * Cria registro de score para AVALIAÇÃO MENSAL (PGSI).
      * 
-     * PGSI is a separate diagnostic metric that doesn't affect the 6 pillars.
-     * The pillars are only recalculated by:
-     * - Daily Assessment: recalculates p4-p6 (craving-based)
-     * - Bet Operations: recalculates p1-p3 (bet history-based)
+     * Preserva TODOS os pilares do último registro.
+     * PGSI é métrica diagnóstica separada — não afeta os 6 pilares.
      */
     public ScoreHistory createScoreHistoryForMonthlyAssessment(
-            Patient patient,
-            int pgsiScore,
-            RiskLevel pgsiRiskLevel,
+            Patient patient, int pgsiScore, RiskLevel pgsiRiskLevel,
             UUID monthlyAssessmentId) {
 
-        // Get ALL current pillar values from latest history - preserve everything
         LatestPillarValues latest = getLatestPillarValues(patient);
 
         return createScoreHistory(
                 patient,
-                latest.p1, latest.p2, latest.p3,
-                latest.p4, latest.p5, latest.p6,
+                new AllPillarScores(latest.p1, latest.p2, latest.p3,
+                        latest.p4, latest.p5, latest.p6),
                 pgsiRiskLevel,
                 pgsiScore,
                 CalculationSource.MONTHLY_ASSESSMENT,
@@ -157,70 +100,123 @@ public class ScoreHistoryService {
     }
 
     /**
-     * Get the latest pillar values for a patient.
-     * Returns default values if no history exists.
+     * Cria registro INICIAL no cadastro do paciente.
+     * 
+     * Garante que getLatestPillarValues() tem dados reais desde o dia 1.
+     * Pilares: P1=290, P2=0, P3=210, P4=0, P5=0, P6=0 = 500 total.
+     */
+    public ScoreHistory createInitialScoreHistory(Patient patient) {
+        AllPillarScores initial = ScoreCalculationService.getInitialPillarScores();
+        return createScoreHistory(
+                patient, initial,
+                null, null,
+                CalculationSource.MANUAL_RECALCULATION,
+                null,
+                "p1,p2,p3,p4,p5,p6");
+    }
+
+    // =====================================================================
+    // CONSULTAS
+    // =====================================================================
+
+    /**
+     * Busca os últimos valores dos pilares para um paciente.
+     * Retorna defaults consistentes com score 500 se não houver histórico.
      */
     public LatestPillarValues getLatestPillarValues(Patient patient) {
-        Optional<ScoreHistory> latestOpt = scoreHistoryRepository.findTopByPatientOrderByRecordedAtDesc(patient);
+        Optional<ScoreHistory> latestOpt = scoreHistoryRepository
+                .findTopByPatientOrderByRecordedAtDesc(patient);
 
         if (latestOpt.isEmpty()) {
-            return new LatestPillarValues(0, 0, 0, 0, 0, 0, null, null);
+            AllPillarScores initial = ScoreCalculationService.getInitialPillarScores();
+            return new LatestPillarValues(
+                    initial.p1(), initial.p2(), initial.p3(),
+                    initial.p4(), initial.p5(), initial.p6(),
+                    null, null);
         }
 
         ScoreHistory latest = latestOpt.get();
         return new LatestPillarValues(
-                latest.getP1Score(),
-                latest.getP2Score(),
-                latest.getP3Score(),
-                latest.getP4Score(),
-                latest.getP5Score(),
-                latest.getP6Score(),
-                latest.getPgsiRiskLevel(),
-                latest.getPgsiScore());
+                latest.getP1Score(), latest.getP2Score(), latest.getP3Score(),
+                latest.getP4Score(), latest.getP5Score(), latest.getP6Score(),
+                latest.getPgsiRiskLevel(), latest.getPgsiScore());
+    }
+
+    public Optional<ScoreHistory> getLatestScoreHistory(Patient patient) {
+        return scoreHistoryRepository.findTopByPatientOrderByRecordedAtDesc(patient);
+    }
+
+    public List<ScoreHistory> findTop2ByPatient(Patient patient) {
+        return scoreHistoryRepository.findTop2ByPatientOrderByRecordedAtDesc(patient);
+    }
+
+    public List<ScoreHistory> findByPatientLast30Days(Patient patient, LocalDateTime from) {
+        return scoreHistoryRepository.findByPatientAndRecordedAtAfterOrderByRecordedAtDesc(patient, from);
+    }
+
+    public List<ScoreHistory> findByPatientBeforeDate(Patient patient, LocalDateTime date) {
+        return scoreHistoryRepository.findByPatientAndRecordedAtLessThanEqualOrderByRecordedAtDesc(patient, date);
+    }
+
+    public void recordScore(ScoreHistory history) {
+        scoreHistoryRepository.save(history);
+    }
+
+    // =====================================================================
+    // HELPERS INTERNOS
+    // =====================================================================
+
+    /**
+     * Método base que cria e salva um ScoreHistory.
+     */
+    private ScoreHistory createScoreHistory(
+            Patient patient, AllPillarScores scores,
+            RiskLevel pgsiRiskLevel, Integer pgsiScore,
+            CalculationSource source, UUID triggerEntityId,
+            String recalculatedPillars) {
+
+        int totalScore = scores.total();
+        RiskLevel scoreRiskLevel = scoreCalculationService.deriveRiskLevelFromScore(totalScore);
+
+        ScoreHistory history = new ScoreHistory();
+        history.setPatient(patient);
+        history.setTotalScore(totalScore);
+        history.setP1Score(scores.p1());
+        history.setP2Score(scores.p2());
+        history.setP3Score(scores.p3());
+        history.setP4Score(scores.p4());
+        history.setP5Score(scores.p5());
+        history.setP6Score(scores.p6());
+        history.setScoreRiskLevel(scoreRiskLevel);
+        history.setPgsiRiskLevel(pgsiRiskLevel);
+        history.setPgsiScore(pgsiScore);
+        history.setCalculationSource(source);
+        history.setTriggerEntityId(triggerEntityId);
+        history.setRecalculatedPillars(recalculatedPillars);
+
+        return scoreHistoryRepository.save(history);
     }
 
     /**
-     * Record to hold latest pillar values from ScoreHistory.
+     * Busca último PGSI risk level preservando pra registros que não são PGSI.
+     */
+    private RiskLevel getLatestPgsiRiskLevel(Patient patient) {
+        return getLatestPillarValues(patient).pgsiRiskLevel();
+    }
+
+    /**
+     * Busca último PGSI score preservando pra registros que não são PGSI.
+     */
+    private Integer getLatestPgsiScore(Patient patient) {
+        return getLatestPillarValues(patient).pgsiScore();
+    }
+
+    /**
+     * Record com os últimos valores dos pilares.
      */
     public record LatestPillarValues(
             int p1, int p2, int p3,
             int p4, int p5, int p6,
             RiskLevel pgsiRiskLevel,
             Integer pgsiScore) {}
-
-    /**
-     * Save a ScoreHistory record.
-     * Preserved for backward compatibility with existing code.
-     */
-    public void recordScore(ScoreHistory history) {
-        scoreHistoryRepository.save(history);
-    }
-
-    /**
-     * Find score history for patient within last 30 days.
-     */
-    public List<ScoreHistory> findByPatientLast30Days(Patient patient, LocalDateTime from) {
-        return scoreHistoryRepository.findByPatientAndRecordedAtAfterOrderByRecordedAtDesc(patient, from);
-    }
-
-    /**
-     * Find the top 2 most recent score history entries for a patient.
-     */
-    public List<ScoreHistory> findTop2ByPatient(Patient patient) {
-        return scoreHistoryRepository.findTop2ByPatientOrderByRecordedAtDesc(patient);
-    }
-
-    /**
-     * Find score history entries before or at a given date.
-     */
-    public List<ScoreHistory> findByPatientBeforeDate(Patient patient, LocalDateTime date) {
-        return scoreHistoryRepository.findByPatientAndRecordedAtLessThanEqualOrderByRecordedAtDesc(patient, date);
-    }
-
-    /**
-     * Get the latest ScoreHistory for a patient.
-     */
-    public Optional<ScoreHistory> getLatestScoreHistory(Patient patient) {
-        return scoreHistoryRepository.findTopByPatientOrderByRecordedAtDesc(patient);
-    }
 }

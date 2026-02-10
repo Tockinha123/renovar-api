@@ -41,7 +41,7 @@ scalar:
   theme: deep-space
   dark-mode: true
   layout: modern
-  path: /scalar/docs/
+  path: scalar/docs/
 
 
 minio:
